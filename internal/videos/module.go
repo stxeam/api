@@ -14,10 +14,10 @@ type Module struct {
 }
 
 type Dependencies struct {
-	VideoRepo    domain.IVideoRepository
-	Storage      domain.IStorageAdapter
-	MessageQueue domain.IMessageQueue
-	IDGenerator  application.IDGenerator
+	VideoRepo   domain.IVideoRepository
+	Storage     domain.IStorageAdapter
+	Publisher   domain.IPublisher
+	IDGenerator application.IDGenerator
 }
 
 const (
@@ -35,7 +35,7 @@ func NewModule(deps Dependencies) *Module {
 	)
 	triggerProcessingUseCase := application.NewTriggerProcessing(
 		deps.VideoRepo,
-		deps.MessageQueue,
+		deps.Publisher,
 	)
 	replaceVideoUseCase := application.NewReplaceVideo(
 		deps.VideoRepo,
@@ -43,7 +43,7 @@ func NewModule(deps Dependencies) *Module {
 	regenerateQualityUseCase := application.NewRegenerateQuality(
 		deps.VideoRepo,
 		deps.Storage,
-		deps.MessageQueue,
+		deps.Publisher,
 	)
 	deleteVideoUseCase := application.NewDeleteVideo(
 		deps.VideoRepo,

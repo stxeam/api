@@ -28,7 +28,7 @@ func setupUsersE2EServer(t *testing.T) *httptest.Server {
 		t.Skip("skipping e2e test")
 	}
 	if globalClient == nil {
-		t.Fatal("postgres not available — create .env.test at project root with DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_SSLMODE")
+		t.Fatal("postgres not available")
 	}
 
 	globalClient.UserSchema.Delete().ExecX(context.Background())

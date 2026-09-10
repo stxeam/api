@@ -54,7 +54,7 @@ func setupAuthIntegration(t *testing.T) (*usersinfra.UserRepository, authdomain.
 		t.Skip("skipping integration test")
 	}
 	if globalClient == nil {
-		t.Fatalf("postgres not available — create .env.test at project root with DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_SSLMODE")
+		t.Fatalf("postgres not available ")
 	}
 
 	globalClient.UserSchema.Delete().ExecX(context.Background())

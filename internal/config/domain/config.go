@@ -1,8 +1,12 @@
 package domain
 
+import "time"
+
 type IConfig interface {
 	Env() string
 	AppName() string
+	AppProtocol() string
+	AppDomain() string
 	APIVersion() string
 	Port() string
 
@@ -30,15 +34,16 @@ type IConfig interface {
 	JWTSecret() string
 	Debug() bool
 
-	S3Host() string
+	S3Domain() string
 	S3Port() string
 	S3Region() string
 	S3AccessKey() string
 	S3SecretKey() string
 	S3Bucket() string
-	S3PrivatePathPrefix() string
+	S3BucketExpiry() time.Duration
 	S3PublicEndpoint() string
 
 	AdminEmail() string
 	AdminPassword() string
+	NatsURL() string
 }

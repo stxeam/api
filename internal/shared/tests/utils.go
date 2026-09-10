@@ -38,7 +38,7 @@ func LoadDotEnv() {
 
 func BuildDSN() string {
 	host := os.Getenv("DB_HOST")
-	if host == "db" || host == "" {
+	if host == "" {
 		host = "localhost"
 	}
 	sslmode := os.Getenv("DB_SSLMODE")

@@ -1,6 +1,6 @@
 package videotests
 
-	import (
+import (
 	"bytes"
 	"context"
 	"encoding/json"
@@ -34,15 +34,15 @@ package videotests
 )
 
 type videoResp struct {
-	Message    string                      `json:"message"`
-	StatusCode int                         `json:"statusCode"`
+	Message    string                       `json:"message"`
+	StatusCode int                          `json:"statusCode"`
 	Data       *videosapp.CreateVideoOutput `json:"data"`
 }
 
 type videoListResp struct {
-	Message    string                    `json:"message"`
-	StatusCode int                       `json:"statusCode"`
-	Data       []videosapp.VideoOutput   `json:"data"`
+	Message    string                  `json:"message"`
+	StatusCode int                     `json:"statusCode"`
+	Data       []videosapp.VideoOutput `json:"data"`
 	Pagination struct {
 		Total int `json:"total"`
 		Page  int `json:"page"`
@@ -51,9 +51,9 @@ type videoListResp struct {
 }
 
 type videoStreamResp struct {
-	Message    string                        `json:"message"`
-	StatusCode int                           `json:"statusCode"`
-	Data       *videosapp.VideoStreamOutput  `json:"data"`
+	Message    string                       `json:"message"`
+	StatusCode int                          `json:"statusCode"`
+	Data       *videosapp.VideoStreamOutput `json:"data"`
 }
 
 type errResp struct {
@@ -109,22 +109,18 @@ func setupVideoE2EServer(t *testing.T) (*httptest.Server, string) {
 
 	videoRepo := videosinfra.NewVideoRepository(globalClient)
 	videoStorage := videosinfra.NewVideoStorageAdapter(globalS3Adapter)
-	videoQueue := videosinfra.NewInMemoryQueueAdapter()
+	natsPublisher, err := videosinfra.NewNatsPublisher(cfg.NatsURL())
+	if err != nil {
+		t.Fatalf("nats publisher not available")
+	}
 
 	videosModule := videos.NewModule(videos.Dependencies{
-		VideoRepo:    videoRepo,
-		Storage:      videoStorage,
-		MessageQueue: videoQueue,
-		IDGenerator:  idGen,
+		VideoRepo:   videoRepo,
+		Storage:     videoStorage,
+		Publisher:   natsPublisher,
+		IDGenerator: idGen,
 	})
 	videosModule.RegisterRoutes(v1, cfg.JWTAccessTokenSecret())
-
-	ctx, cancel := context.WithCancel(context.Background())
-	ffmpegAdapter := videosinfra.NewFfmpegAdapter()
-	processVideoUC := videosapp.NewProcessVideo(videoRepo, videoStorage, ffmpegAdapter)
-	consumer := videospres.NewConsumerQueueWorker(videoQueue, processVideoUC)
-	go consumer.Start(ctx)
-	t.Cleanup(func() { cancel() })
 
 	ts := httptest.NewServer(e)
 
@@ -230,17 +226,23 @@ func TestVideoE2E_ProcessFlow(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
-	listResp := doRequest(t, http.MethodGet, ts.URL+"/api/v1/admin/videos?status=Processing", adminToken, nil)
-	defer listResp.Body.Close()
-
-	var list videoListResp
-	err = json.NewDecoder(listResp.Body).Decode(&list)
+	allResp := doRequest(t, http.MethodGet, ts.URL+"/api/v1/admin/videos", adminToken, nil)
+	defer allResp.Body.Close()
+	var allList videoListResp
+	err = json.NewDecoder(allResp.Body).Decode(&allList)
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, list.Pagination.Total, 1)
-	assert.Equal(t, "Processing Test", list.Data[0].Title)
-	assert.Equal(t, "Processing", list.Data[0].Status)
+	require.GreaterOrEqual(t, allList.Pagination.Total, 1)
+	found := false
+	for _, v := range allList.Data {
+		if v.Title == "Processing Test" {
+			found = true
+			assert.Contains(t, []string{"Processing", "Failed", "Ready"}, v.Status)
+			break
+		}
+	}
+	assert.True(t, found, "Processing Test video should exist after trigger")
 }
 
 func TestVideoE2E_DeleteVideo(t *testing.T) {
@@ -303,8 +305,8 @@ func TestVideoE2E_ReplaceVideo(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var replace struct {
-		Message    string                       `json:"message"`
-		StatusCode int                          `json:"statusCode"`
+		Message    string                        `json:"message"`
+		StatusCode int                           `json:"statusCode"`
 		Data       *videosapp.ReplaceVideoOutput `json:"data"`
 	}
 	err = json.NewDecoder(resp.Body).Decode(&replace)

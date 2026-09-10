@@ -104,22 +104,28 @@ func CreateApp(cfg config.IConfig) *echo.Echo {
 
 	videoRepo := videosinfra.NewVideoRepository(client)
 	videoStorage := videosinfra.NewVideoStorageAdapter(s3Adapter)
-	videoQueue := videosinfra.NewInMemoryQueueAdapter()
+
+	natsPublisher, err := videosinfra.NewNatsPublisher(cfg.NatsURL())
+	if err != nil {
+		slog.Error("failed to create nats publisher", "error", err)
+	}
 
 	videosModule := videos.NewModule(videos.Dependencies{
-		VideoRepo:    videoRepo,
-		Storage:      videoStorage,
-		MessageQueue: videoQueue,
-		IDGenerator:  idGen,
+		VideoRepo:   videoRepo,
+		Storage:     videoStorage,
+		Publisher:   natsPublisher,
+		IDGenerator: idGen,
 	})
 	videosModule.RegisterRoutes(v1, cfg.JWTAccessTokenSecret())
 
-	ffmpegAdapter := videosinfra.NewFfmpegAdapter()
-	processVideoUseCase := videosapp.NewProcessVideo(videoRepo, videoStorage, ffmpegAdapter)
-	consumer := videospres.NewConsumerQueueWorker(videoQueue, processVideoUseCase)
-	go consumer.Start(context.Background())
+	statusSubscriber, err := videospres.NewStatusSubscriber(cfg.NatsURL(), videoRepo)
+	if err != nil {
+		slog.Error("failed to create status subscriber", "error", err)
+	} else {
+		go statusSubscriber.Start(context.Background())
+	}
 
-	pollPendingVideos := videosapp.NewPollPendingVideos(videoRepo, videoQueue)
+	pollPendingVideos := videosapp.NewPollPendingVideos(videoRepo, natsPublisher)
 	producerWorker := videospres.NewProducerWorker(pollPendingVideos)
 	go producerWorker.Start(context.Background())
 

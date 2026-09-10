@@ -32,9 +32,8 @@ type IStorageAdapter interface {
 	UploadFile(ctx context.Context, key string, body []byte, contentType string) (string, error)
 }
 
-type IMessageQueue interface {
-	Enqueue(ctx context.Context, job VideoProcessingJob) error
-	Dequeue(ctx context.Context) (*VideoProcessingJob, error)
+type IPublisher interface {
+	Publish(ctx context.Context, job VideoProcessingJob) error
 }
 
 type VideoProcessingJob struct {

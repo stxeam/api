@@ -16,18 +16,16 @@ import (
 )
 
 type S3Adapter struct {
-	client            *minio.Client
-	clientExternal    *minio.Client
-	bucket            string
-	presignedExpiry   time.Duration
-	privateEndpoint   string
-	privatePathPrefix string
-	publicEndpoint    string
-	publicPathPrefix  string
+	client          *minio.Client
+	clientExternal  *minio.Client
+	bucket          string
+	presignedExpiry time.Duration
+	privateEndpoint string
+	publicEndpoint  string
 }
 
 func NewS3Adapter(cfg config.IConfig) (*S3Adapter, error) {
-	endpoint := fmt.Sprintf("%s:%s", cfg.S3Host(), cfg.S3Port())
+	endpoint := fmt.Sprintf("%s:%s", cfg.S3Domain(), cfg.S3Port())
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.S3AccessKey(), cfg.S3SecretKey(), ""),
 		Secure: false,
@@ -37,18 +35,9 @@ func NewS3Adapter(cfg config.IConfig) (*S3Adapter, error) {
 	}
 
 	rawPublicEndpoint := cfg.S3PublicEndpoint()
-	parsedURL, err := url.Parse(rawPublicEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("invalid S3_PUBLIC_ENDPOINT: %w", err)
-	}
+	parsedURL, _ := url.Parse(rawPublicEndpoint)
 	publicEndpoint := fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
-	publicPathPrefix := strings.TrimRight(parsedURL.Path, "/")
 
-	// clientExternal is only used for presigned URL generation.
-	// It must use the public endpoint host so the signature matches
-	// the host that external clients will connect to.
-	// Setting Region explicitly skips the GetBucketLocation network call,
-	// so this client never needs to reach the endpoint from inside Docker.
 	clientExternal, err := minio.New(parsedURL.Host, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.S3AccessKey(), cfg.S3SecretKey(), ""),
 		Secure: parsedURL.Scheme == "https",
@@ -58,15 +47,15 @@ func NewS3Adapter(cfg config.IConfig) (*S3Adapter, error) {
 		return nil, err
 	}
 
+	expiry := cfg.S3BucketExpiry()
+
 	return &S3Adapter{
-		client:            client,
-		clientExternal:    clientExternal,
-		bucket:            cfg.S3Bucket(),
-		presignedExpiry:   7 * 24 * time.Hour,
-		privateEndpoint:   endpoint,
-		privatePathPrefix: cfg.S3PrivatePathPrefix(),
-		publicEndpoint:    publicEndpoint,
-		publicPathPrefix:  publicPathPrefix,
+		client:          client,
+		clientExternal:  clientExternal,
+		bucket:          cfg.S3Bucket(),
+		presignedExpiry: expiry,
+		privateEndpoint: endpoint,
+		publicEndpoint:  publicEndpoint,
 	}, nil
 }
 
@@ -78,7 +67,7 @@ func (a *S3Adapter) Init(ctx context.Context) error {
 		}
 	}
 
-	slog.Info("S3 adapter initialized", "bucket", a.bucket)
+	slog.Info("S3 adapter initialized", "bucket", a.bucket, "endpoint", a.privateEndpoint, "public", a.publicEndpoint)
 	return nil
 }
 
@@ -97,7 +86,7 @@ func (a *S3Adapter) GetSignedUrl(ctx context.Context, key string) (string, error
 	if err != nil {
 		return "", fmt.Errorf("failed to generate signed URL: %w", err)
 	}
-	return a.injectPathPrefix(presignedURL), nil
+	return presignedURL.String(), nil
 }
 
 func (a *S3Adapter) GetSignedUploadUrl(ctx context.Context, key string, contentType string) (string, error) {
@@ -105,19 +94,11 @@ func (a *S3Adapter) GetSignedUploadUrl(ctx context.Context, key string, contentT
 	if err != nil {
 		return "", fmt.Errorf("failed to generate signed upload URL: %w", err)
 	}
-	return a.injectPathPrefix(presignedURL), nil
-}
-
-func (a *S3Adapter) injectPathPrefix(u *url.URL) string {
-	if a.publicPathPrefix == "" {
-		return u.String()
-	}
-	u.Path = a.publicPathPrefix + u.Path
-	return u.String()
+	return presignedURL.String(), nil
 }
 
 func (a *S3Adapter) GetPublicUrl(key string) string {
-	return fmt.Sprintf("%s%s/%s/%s", a.publicEndpoint, a.publicPathPrefix, a.bucket, key)
+	return fmt.Sprintf("%s/%s/%s", a.publicEndpoint, a.bucket, key)
 }
 
 func (a *S3Adapter) DeleteFile(ctx context.Context, key string) error {

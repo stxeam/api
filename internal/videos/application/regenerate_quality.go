@@ -14,18 +14,18 @@ type RegenerateQualityInput struct {
 type RegenerateQuality struct {
 	videoRepo domain.IVideoRepository
 	storage   domain.IStorageAdapter
-	queue     domain.IMessageQueue
+	publisher domain.IPublisher
 }
 
 func NewRegenerateQuality(
 	videoRepo domain.IVideoRepository,
 	storage domain.IStorageAdapter,
-	queue domain.IMessageQueue,
+	publisher domain.IPublisher,
 ) *RegenerateQuality {
 	return &RegenerateQuality{
 		videoRepo: videoRepo,
 		storage:   storage,
-		queue:     queue,
+		publisher: publisher,
 	}
 }
 
@@ -53,5 +53,5 @@ func (uc *RegenerateQuality) Execute(ctx context.Context, input RegenerateQualit
 		IsAppend:           true,
 	}
 
-	return uc.queue.Enqueue(ctx, job)
+	return uc.publisher.Publish(ctx, job)
 }

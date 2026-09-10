@@ -29,8 +29,12 @@ func (r *UserRepository) Create(ctx context.Context, u *domain.User) (*domain.Us
 		p := u.Phone.String()
 		phoneStr = &p
 	}
+	parsed, err := uuid.Parse(u.ID.String())
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
 	create := r.client.UserSchema.Create().
-		SetID(uuid.MustParse(u.ID.String())).
+		SetID(parsed).
 		SetName(u.Name).
 		SetEmail(u.Email.String()).
 		SetNillablePhone(phoneStr).
@@ -48,8 +52,12 @@ func (r *UserRepository) Create(ctx context.Context, u *domain.User) (*domain.Us
 }
 
 func (r *UserRepository) FindByID(ctx context.Context, id string) (*domain.User, error) {
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return nil, nil
+	}
 	u, err := r.client.UserSchema.Query().
-		Where(userschema.IDEQ(uuid.MustParse(id))).
+		Where(userschema.IDEQ(parsed)).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -116,7 +124,11 @@ func (r *UserRepository) Update(ctx context.Context, u *domain.User) (*domain.Us
 		p := u.Phone.String()
 		phoneStr = &p
 	}
-	update := r.client.UserSchema.UpdateOneID(uuid.MustParse(u.ID.String())).
+	parsed, err := uuid.Parse(u.ID.String())
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	update := r.client.UserSchema.UpdateOneID(parsed).
 		SetName(u.Name).
 		SetEmail(u.Email.String()).
 		SetNillablePhone(phoneStr).
@@ -137,7 +149,11 @@ func (r *UserRepository) Update(ctx context.Context, u *domain.User) (*domain.Us
 }
 
 func (r *UserRepository) Delete(ctx context.Context, id string) error {
-	err := r.client.UserSchema.DeleteOneID(uuid.MustParse(id)).Exec(ctx)
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return nil
+	}
+	err = r.client.UserSchema.DeleteOneID(parsed).Exec(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil
@@ -148,7 +164,11 @@ func (r *UserRepository) Delete(ctx context.Context, id string) error {
 }
 
 func (r *UserRepository) Ban(ctx context.Context, id string) (*domain.User, error) {
-	updated, err := r.client.UserSchema.UpdateOneID(uuid.MustParse(id)).
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return nil, nil
+	}
+	updated, err := r.client.UserSchema.UpdateOneID(parsed).
 		SetBanned(true).
 		Save(ctx)
 	if err != nil {
@@ -161,7 +181,11 @@ func (r *UserRepository) Ban(ctx context.Context, id string) (*domain.User, erro
 }
 
 func (r *UserRepository) Unban(ctx context.Context, id string) (*domain.User, error) {
-	updated, err := r.client.UserSchema.UpdateOneID(uuid.MustParse(id)).
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return nil, nil
+	}
+	updated, err := r.client.UserSchema.UpdateOneID(parsed).
 		SetBanned(false).
 		Save(ctx)
 	if err != nil {

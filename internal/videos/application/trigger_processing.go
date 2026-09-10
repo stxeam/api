@@ -13,16 +13,16 @@ type TriggerProcessingInput struct {
 
 type TriggerProcessing struct {
 	videoRepo domain.IVideoRepository
-	queue     domain.IMessageQueue
+	publisher domain.IPublisher
 }
 
 func NewTriggerProcessing(
 	videoRepo domain.IVideoRepository,
-	queue domain.IMessageQueue,
+	publisher domain.IPublisher,
 ) *TriggerProcessing {
 	return &TriggerProcessing{
 		videoRepo: videoRepo,
-		queue:     queue,
+		publisher: publisher,
 	}
 }
 
@@ -50,5 +50,5 @@ func (uc *TriggerProcessing) Execute(ctx context.Context, input TriggerProcessin
 		IsAppend:           false,
 	}
 
-	return uc.queue.Enqueue(ctx, job)
+	return uc.publisher.Publish(ctx, job)
 }

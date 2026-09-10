@@ -8,11 +8,16 @@ import (
 	"time"
 
 	"go-starter/internal/app"
+	"go-starter/internal/config"
 	"go-starter/internal/config/infrastructure"
 )
 
 func main() {
 	cfg := infrastructure.NewConfigAdapter()
+	if err := config.NewEnvValidator().Validate(cfg); err != nil {
+		slog.Error("env validation failed", "error", err)
+		os.Exit(1)
+	}
 	app := app.CreateApp(cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

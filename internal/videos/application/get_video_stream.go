@@ -8,13 +8,13 @@ import (
 )
 
 type VideoStreamOutput struct {
-	ID                string `json:"id"`
-	Title             string `json:"title"`
-	Description       string `json:"description"`
-	Type              string `json:"type"`
+	ID                string   `json:"id"`
+	Title             string   `json:"title"`
+	Description       string   `json:"description"`
+	Type              string   `json:"type"`
 	Qualities         []string `json:"qualities"`
-	MasterPlaylistUrl string `json:"master_playlist_url"`
-	UploadedAt        string `json:"uploaded_at"`
+	MasterPlaylistUrl string   `json:"master_playlist_url"`
+	UploadedAt        string   `json:"uploaded_at"`
 }
 
 type GetVideoStream struct {
@@ -45,6 +45,11 @@ func (uc *GetVideoStream) Execute(ctx context.Context, id string) (*VideoStreamO
 		return nil, &domain.VideoNotReadyError{ID: id}
 	}
 
+	qualities := video.GetQualities()
+	if len(qualities) == 0 {
+		qualities = discoverQualities(ctx, uc.storage, video.GetID())
+	}
+
 	masterKey := "videos/" + video.GetID() + "/master.m3u8"
 	masterPlaylistUrl, err := uc.storage.GeneratePresignedGetUrl(ctx, masterKey, 1*time.Hour)
 	if err != nil {
@@ -56,8 +61,26 @@ func (uc *GetVideoStream) Execute(ctx context.Context, id string) (*VideoStreamO
 		Title:             video.GetTitle(),
 		Description:       video.GetDescription(),
 		Type:              video.GetType().String(),
-		Qualities:         qualitiesToStrings(video.GetQualities()),
+		Qualities:         qualitiesToStrings(qualities),
 		MasterPlaylistUrl: masterPlaylistUrl,
 		UploadedAt:        video.GetUploadedAt().Format(time.RFC3339),
 	}, nil
+}
+
+func discoverQualities(ctx context.Context, storage domain.IStorageAdapter, videoID string) []domain.VideoQuality {
+	knownQualities := []domain.VideoQuality{
+		domain.Quality480p,
+		domain.Quality720p,
+		domain.Quality1080p,
+		domain.Quality4k,
+	}
+	qualities := make([]domain.VideoQuality, 0, len(knownQualities))
+	for _, quality := range knownQualities {
+		key := "videos/" + videoID + "/" + string(quality) + "/playlist.m3u8"
+		exists, err := storage.ObjectExists(ctx, key)
+		if err == nil && exists {
+			qualities = append(qualities, quality)
+		}
+	}
+	return qualities
 }

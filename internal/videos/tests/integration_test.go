@@ -11,11 +11,11 @@ import (
 
 	_ "github.com/lib/pq"
 
-	shareddomain "go-starter/internal/shared/domain"
-	"go-starter/internal/shared/infrastructure/ent/generated"
-	sharedinfra "go-starter/internal/shared/infrastructure"
-	sharedtests "go-starter/internal/shared/tests"
 	configinfra "go-starter/internal/config/infrastructure"
+	shareddomain "go-starter/internal/shared/domain"
+	sharedinfra "go-starter/internal/shared/infrastructure"
+	"go-starter/internal/shared/infrastructure/ent/generated"
+	sharedtests "go-starter/internal/shared/tests"
 	"go-starter/internal/videos/domain"
 	"go-starter/internal/videos/infrastructure"
 )
@@ -91,7 +91,7 @@ func setupIntegrationStorage(t *testing.T) *infrastructure.VideoStorageAdapter {
 		t.Skip("skipping integration test")
 	}
 	if globalS3Adapter == nil {
-		t.Skip("s3 not available — set S3_HOST, S3_PORT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET in .env.test")
+		t.Skip("s3 not available — set S3_DOMAIN, S3_PORT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET in .env.test")
 	}
 
 	return infrastructure.NewVideoStorageAdapter(globalS3Adapter)
@@ -254,29 +254,4 @@ func TestVideoStorageAdapter_DeletePrefixes_Integration(t *testing.T) {
 	exists, err := storage.ObjectExists(ctx, "raws/test-id.mp4")
 	require.NoError(t, err)
 	assert.False(t, exists)
-}
-
-func TestQueueAdapter_EnqueueDequeue_Integration(t *testing.T) {
-	queue := infrastructure.NewInMemoryQueueAdapter()
-	ctx := context.Background()
-
-	job := domain.VideoProcessingJob{
-		VideoID:            "test-video",
-		RequestedQualities: []string{"480p", "1080p"},
-		IsAppend:           false,
-	}
-
-	err := queue.Enqueue(ctx, job)
-	require.NoError(t, err)
-
-	dequeued, err := queue.Dequeue(ctx)
-	require.NoError(t, err)
-	require.NotNil(t, dequeued)
-	assert.Equal(t, "test-video", dequeued.VideoID)
-	assert.Equal(t, []string{"480p", "1080p"}, dequeued.RequestedQualities)
-	assert.False(t, dequeued.IsAppend)
-
-	dequeued, err = queue.Dequeue(ctx)
-	require.NoError(t, err)
-	assert.Nil(t, dequeued)
 }

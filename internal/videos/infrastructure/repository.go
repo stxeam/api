@@ -24,8 +24,12 @@ func NewVideoRepository(client *ent.Client) *VideoRepository {
 }
 
 func (r *VideoRepository) Create(ctx context.Context, v *domain.Video) (*domain.Video, error) {
+	parsed, err := uuid.Parse(v.ID.String())
+	if err != nil {
+		return nil, fmt.Errorf("invalid video id: %w", err)
+	}
 	created, err := r.client.Video.Create().
-		SetID(uuid.MustParse(v.ID.String())).
+		SetID(parsed).
 		SetTitle(v.Title).
 		SetDescription(v.Description).
 		SetType(entvideo.Type(v.Type.String())).
@@ -42,8 +46,12 @@ func (r *VideoRepository) Create(ctx context.Context, v *domain.Video) (*domain.
 }
 
 func (r *VideoRepository) FindByID(ctx context.Context, id string) (*domain.Video, error) {
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return nil, nil
+	}
 	v, err := r.client.Video.Query().
-		Where(entvideo.IDEQ(uuid.MustParse(id))).
+		Where(entvideo.IDEQ(parsed)).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -113,7 +121,11 @@ func (r *VideoRepository) List(ctx context.Context, filter domain.VideoListFilte
 }
 
 func (r *VideoRepository) Update(ctx context.Context, v *domain.Video) (*domain.Video, error) {
-	updated, err := r.client.Video.UpdateOneID(uuid.MustParse(v.ID.String())).
+	parsed, err := uuid.Parse(v.ID.String())
+	if err != nil {
+		return nil, fmt.Errorf("invalid video id: %w", err)
+	}
+	updated, err := r.client.Video.UpdateOneID(parsed).
 		SetTitle(v.Title).
 		SetDescription(v.Description).
 		SetType(entvideo.Type(v.Type.String())).
@@ -130,7 +142,11 @@ func (r *VideoRepository) Update(ctx context.Context, v *domain.Video) (*domain.
 }
 
 func (r *VideoRepository) Delete(ctx context.Context, id string) error {
-	err := r.client.Video.DeleteOneID(uuid.MustParse(id)).Exec(ctx)
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return nil
+	}
+	err = r.client.Video.DeleteOneID(parsed).Exec(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil

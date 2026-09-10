@@ -16,16 +16,16 @@ type PollPendingVideosResult struct {
 
 type PollPendingVideos struct {
 	videoRepo domain.IVideoRepository
-	queue     domain.IMessageQueue
+	publisher domain.IPublisher
 }
 
 func NewPollPendingVideos(
 	videoRepo domain.IVideoRepository,
-	queue domain.IMessageQueue,
+	publisher domain.IPublisher,
 ) *PollPendingVideos {
 	return &PollPendingVideos{
 		videoRepo: videoRepo,
-		queue:     queue,
+		publisher: publisher,
 	}
 }
 
@@ -59,7 +59,7 @@ func (uc *PollPendingVideos) Execute(ctx context.Context) (*PollPendingVideosRes
 			continue
 		}
 
-		if err := uc.queue.Enqueue(ctx, domain.VideoProcessingJob{
+		if err := uc.publisher.Publish(ctx, domain.VideoProcessingJob{
 			VideoID:            videoID,
 			RequestedQualities: []string{"480p", "720p", "1080p", "4k"},
 			IsAppend:           false,

@@ -15,6 +15,20 @@ import (
 	videospres "go-starter/internal/videos/presentation"
 )
 
+type mockPublisher struct {
+	jobs []domain.VideoProcessingJob
+}
+
+func newMockPublisher() *mockPublisher {
+	return &mockPublisher{}
+}
+
+func (p *mockPublisher) Publish(ctx context.Context, job domain.VideoProcessingJob) error {
+	p.jobs = append(p.jobs, job)
+	return nil
+}
+
+
 type mockIDGenerator struct{}
 
 func (m *mockIDGenerator) Generate() string { return shareddomain.NewId().String() }
@@ -70,20 +84,10 @@ func (m *mockStorageAdapter) DownloadFile(ctx context.Context, key string) ([]by
 	return data, nil
 }
 
-type mockMessageQueue struct {
-	jobs []domain.VideoProcessingJob
-}
 
-func newMockMessageQueue() *mockMessageQueue {
-	return &mockMessageQueue{}
-}
 
-func (q *mockMessageQueue) Enqueue(ctx context.Context, job domain.VideoProcessingJob) error {
-	q.jobs = append(q.jobs, job)
-	return nil
-}
 
-func (q *mockMessageQueue) Dequeue(ctx context.Context) (*domain.VideoProcessingJob, error) {
+func (q *mockPublisher) Dequeue(ctx context.Context) (*domain.VideoProcessingJob, error) {
 	if len(q.jobs) == 0 {
 		return nil, nil
 	}
@@ -160,10 +164,10 @@ func TestCreateVideo_InvalidType(t *testing.T) {
 
 func TestTriggerProcessing_Success(t *testing.T) {
 	repo := infrastructure.NewInMemoryVideoRepository()
-	queue := newMockMessageQueue()
+	publisher := newMockPublisher()
 	seedVideo(t, repo, "v1", "Movie", "desc", domain.VideoTypeMovie, domain.StatusPendingUpload)
 
-	uc := videosapp.NewTriggerProcessing(repo, queue)
+	uc := videosapp.NewTriggerProcessing(repo, publisher)
 	err := uc.Execute(context.Background(), videosapp.TriggerProcessingInput{
 		VideoID:            "v1",
 		RequestedQualities: []string{"480p", "1080p"},
@@ -175,16 +179,16 @@ func TestTriggerProcessing_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusProcessing, v.Status)
 
-	assert.Len(t, queue.jobs, 1)
-	assert.Equal(t, "v1", queue.jobs[0].VideoID)
-	assert.False(t, queue.jobs[0].IsAppend)
+	assert.Len(t, publisher.jobs, 1)
+	assert.Equal(t, "v1", publisher.jobs[0].VideoID)
+	assert.False(t, publisher.jobs[0].IsAppend)
 }
 
 func TestTriggerProcessing_NotFound(t *testing.T) {
 	repo := infrastructure.NewInMemoryVideoRepository()
-	queue := newMockMessageQueue()
+	publisher := newMockPublisher()
 
-	uc := videosapp.NewTriggerProcessing(repo, queue)
+	uc := videosapp.NewTriggerProcessing(repo, publisher)
 	err := uc.Execute(context.Background(), videosapp.TriggerProcessingInput{
 		VideoID:            "nonexistent",
 		RequestedQualities: []string{"480p"},
@@ -215,31 +219,31 @@ func TestReplaceVideo_Success(t *testing.T) {
 func TestRegenerateQuality_Success(t *testing.T) {
 	repo := infrastructure.NewInMemoryVideoRepository()
 	storage := newMockStorageAdapter()
-	queue := newMockMessageQueue()
+	publisher := newMockPublisher()
 	seedVideo(t, repo, "v1", "Movie", "desc", domain.VideoTypeMovie, domain.StatusReady)
 
 	rawKey := "raws/v1.mp4"
 	storage.objects[rawKey] = []byte("fake-raw")
 
-	uc := videosapp.NewRegenerateQuality(repo, storage, queue)
+	uc := videosapp.NewRegenerateQuality(repo, storage, publisher)
 	err := uc.Execute(context.Background(), videosapp.RegenerateQualityInput{
 		VideoID: "v1",
 		Quality: "720p",
 	})
 
 	require.NoError(t, err)
-	assert.Len(t, queue.jobs, 1)
-	assert.True(t, queue.jobs[0].IsAppend)
-	assert.Equal(t, "720p", queue.jobs[0].RequestedQualities[0])
+	assert.Len(t, publisher.jobs, 1)
+	assert.True(t, publisher.jobs[0].IsAppend)
+	assert.Equal(t, "720p", publisher.jobs[0].RequestedQualities[0])
 }
 
 func TestRegenerateQuality_RawNotFound(t *testing.T) {
 	repo := infrastructure.NewInMemoryVideoRepository()
 	storage := newMockStorageAdapter()
-	queue := newMockMessageQueue()
+	publisher := newMockPublisher()
 	seedVideo(t, repo, "v1", "Movie", "desc", domain.VideoTypeMovie, domain.StatusReady)
 
-	uc := videosapp.NewRegenerateQuality(repo, storage, queue)
+	uc := videosapp.NewRegenerateQuality(repo, storage, publisher)
 	err := uc.Execute(context.Background(), videosapp.RegenerateQualityInput{
 		VideoID: "v1",
 		Quality: "720p",
@@ -350,24 +354,24 @@ func TestGetVideoStream_NotReady(t *testing.T) {
 
 func TestProducerWorker_PollsAndEnqueues(t *testing.T) {
 	repo := infrastructure.NewInMemoryVideoRepository()
-	queue := newMockMessageQueue()
+	publisher := newMockPublisher()
 	seedVideo(t, repo, "v1", "Movie1", "desc", domain.VideoTypeMovie, domain.StatusPendingUpload)
 	seedVideo(t, repo, "v2", "Movie2", "desc", domain.VideoTypeMovie, domain.StatusPendingUpload)
 
-	uc := videosapp.NewPollPendingVideos(repo, queue)
+	uc := videosapp.NewPollPendingVideos(repo, publisher)
 	worker := videospres.NewProducerWorker(uc)
 
 	result, err := uc.Execute(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, result.ProcessedIDs, 2)
-	assert.Len(t, queue.jobs, 2)
+	assert.Len(t, publisher.jobs, 2)
 	_ = worker
 }
 
 func TestProducerWorker_SkipsIfAlreadyRunning(t *testing.T) {
 	repo := infrastructure.NewInMemoryVideoRepository()
-	queue := newMockMessageQueue()
-	uc := videosapp.NewPollPendingVideos(repo, queue)
+	publisher := newMockPublisher()
+	uc := videosapp.NewPollPendingVideos(repo, publisher)
 	worker := videospres.NewProducerWorker(uc)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -386,30 +390,3 @@ func TestProducerWorker_SkipsIfAlreadyRunning(t *testing.T) {
 	assert.Len(t, result.ProcessedIDs, 0)
 }
 
-func TestConsumerQueueWorker_ProcessesJob(t *testing.T) {
-	repo := infrastructure.NewInMemoryVideoRepository()
-	storage := newMockStorageAdapter()
-	queue := newMockMessageQueue()
-	seedVideo(t, repo, "v1", "Movie", "desc", domain.VideoTypeMovie, domain.StatusProcessing)
-
-	uc := videosapp.NewProcessVideo(repo, storage, &mockTranscoder{})
-	worker := videospres.NewConsumerQueueWorker(queue, uc)
-
-	queue.jobs = append(queue.jobs, domain.VideoProcessingJob{
-		VideoID:            "v1",
-		RequestedQualities: []string{"480p"},
-		IsAppend:           false,
-	})
-
-	err := uc.Execute(context.Background(), videosapp.ProcessVideoInput{
-		VideoID:            "v1",
-		RequestedQualities: []string{"480p"},
-		IsAppend:           false,
-	})
-	assert.NoError(t, err)
-
-	v, err := repo.FindByID(context.Background(), "v1")
-	require.NoError(t, err)
-	assert.Equal(t, domain.StatusReady, v.Status)
-	_ = worker
-}
